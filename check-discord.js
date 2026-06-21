@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-/**
- * check-discord.js — quick standalone test of the Discord webhook.
- *
- * Reads DISCORD_WEBHOOK_URL from the .env next to this file (or the environment)
- * and posts a message to the channel. Does NOT touch gitlab-watch.js or hit GitLab.
- *
- * Zero dependencies — uses Node's built-in fetch + readline (Node 18+).
- *
- * Usage:
- *   node check-discord.js            # loops: type a message, Enter to send, repeat
- *   node check-discord.js "any text" # posts the text you pass directly, once
- *
- * In loop mode, send an empty line or press Ctrl-C / Ctrl-D to quit.
- */
-
 'use strict';
 
 const fs = require('fs');
@@ -67,19 +52,15 @@ async function send(message) {
 }
 
 async function main() {
-  // One-shot mode: a message was passed as an argument.
   if (process.argv.length > 2) {
     const ok = await send(process.argv.slice(2).join(' '));
     process.exit(ok ? 0 : 1);
   }
 
-  // Loop mode: keep prompting until empty line / Ctrl-C / Ctrl-D.
   console.log('Type a message and press Enter to send. Empty line or Ctrl-C to quit.');
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout, prompt: '> ' });
   rl.prompt();
 
-  // Queue lines and process strictly in order with a single worker. This keeps
-  // message order and avoids races when many lines arrive at once (e.g. piped input).
   const queue = [];
   let working = false;
   let streamClosed = false;
@@ -90,12 +71,12 @@ async function main() {
     working = true;
     while (queue.length) {
       const answer = queue.shift().trim();
-      if (!answer) return finish();   // empty line = quit
+      if (!answer) return finish();
       await send(answer);
       rl.prompt();
     }
     working = false;
-    if (streamClosed) finish();       // input ended (Ctrl-D / EOF) after draining
+    if (streamClosed) finish();
   }
 
   rl.on('line', (line) => { queue.push(line); drain(); });

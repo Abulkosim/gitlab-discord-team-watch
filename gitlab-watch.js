@@ -1,36 +1,8 @@
 #!/usr/bin/env node
-/**
- * gitlab-watch.js — live terminal feed of every team member's GitLab activity.
- *
- * Talks to the GitLab REST API directly (no Claude MCP needed), so it runs
- * anywhere the GitLab server is reachable (office WiFi / VPN).
- *
- * Zero dependencies — uses Node's built-in fetch (Node 18+). Run with: node gitlab-watch.js
- *
- * Config comes from environment variables (or a .env file next to this script):
- *
- *   GITLAB_URL       Base URL of your GitLab, e.g. https://gitlab.example.com   (required)
- *   GITLAB_TOKEN     Personal access token with `read_api` scope                (required)
- *   GITLAB_GROUP     Group id or full path (e.g. "myteam" or "org/myteam").
- *                    The tool watches every member of this group.
- *   GITLAB_USERS     Comma-separated usernames to watch instead of / in addition
- *                    to the group (e.g. "aziz,dilnoza,sardor").
- *   POLL_INTERVAL    Seconds between refreshes (default 30).
- *   EVENT_LIMIT      Max rows shown in the feed (default 40).
- *   DISCORD_WEBHOOK_URL  Optional. If set, every NEW event (after the first poll)
- *                    is also pushed to this Discord channel webhook.
- *
- * You must set GITLAB_URL + GITLAB_TOKEN, and at least one of GITLAB_GROUP / GITLAB_USERS.
- */
-
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
-
-// ---------------------------------------------------------------------------
-// Tiny ANSI color helpers (no dependency)
-// ---------------------------------------------------------------------------
 
 const C = {
   reset: '\x1b[0m', bold: '\x1b[1m', dim: '\x1b[2m',
@@ -38,10 +10,6 @@ const C = {
   blue: '\x1b[34m', magenta: '\x1b[35m', cyan: '\x1b[36m', white: '\x1b[37m',
 };
 const color = (s, ...codes) => codes.map((c) => C[c]).join('') + s + C.reset;
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 
 function loadDotenv() {
   const p = path.join(__dirname, '.env');
@@ -80,10 +48,6 @@ if (!TOKEN) fail('GITLAB_TOKEN is not set. Create a personal access token with `
 if (!GROUP && USERS.length === 0) {
   fail('Set GITLAB_GROUP and/or GITLAB_USERS so the tool knows whom to watch.');
 }
-
-// ---------------------------------------------------------------------------
-// GitLab API
-// ---------------------------------------------------------------------------
 
 class HttpError extends Error {
   constructor(status, body) {
@@ -156,13 +120,9 @@ async function fetchUserEvents(user, perPage = 30) {
     if (e instanceof HttpError) return [];
     throw e;
   }
-  for (const e of events) e._user = user; // remember whom we polled
+  for (const e of events) e._user = user;
   return events;
 }
-
-// ---------------------------------------------------------------------------
-// Describing events
-// ---------------------------------------------------------------------------
 
 const ACTION_COLOR = {
   'pushed to': 'cyan', 'pushed new': 'cyan', deleted: 'red',
@@ -228,10 +188,6 @@ async function projectName(event) {
   return projectCache.get(pid);
 }
 
-// ---------------------------------------------------------------------------
-// Rendering (live full-screen table)
-// ---------------------------------------------------------------------------
-
 function fit(s, width, align = 'left') {
   s = String(s ?? '');
   if (s.length > width) s = width > 1 ? s.slice(0, width - 1) + '…' : s.slice(0, width);
@@ -274,10 +230,6 @@ async function render(events, newIds, status, memberCount) {
   process.stdout.write(out);
 }
 
-// ---------------------------------------------------------------------------
-// Discord push notifications (optional)
-// ---------------------------------------------------------------------------
-
 const EMOJI = {
   'pushed to': '⬆️', 'pushed new': '🌱', deleted: '🗑️',
   opened: '✨', closed: '🚪', merged: '🟣', accepted: '🟣',
@@ -303,13 +255,11 @@ async function postToDiscord(content) {
       signal: AbortSignal.timeout(15000),
     });
   } catch {
-    // Don't let a notification failure kill the live feed.
   }
 }
 
 async function notifyDiscord(newEvents) {
   if (!DISCORD_WEBHOOK_URL || newEvents.length === 0) return;
-  // Oldest first so the channel reads chronologically.
   const lines = [];
   for (const e of [...newEvents].reverse()) lines.push(await discordLine(e));
 
@@ -324,10 +274,6 @@ async function notifyDiscord(newEvents) {
   }
   if (chunk.length) await postToDiscord(chunk.join('\n'));
 }
-
-// ---------------------------------------------------------------------------
-// Main loop
-// ---------------------------------------------------------------------------
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -366,7 +312,6 @@ async function main() {
     return newIds;
   }
 
-  // Enter alternate screen + hide cursor; restore on exit.
   process.stdout.write('\x1b[?1049h\x1b[?25l');
   const restore = () => process.stdout.write('\x1b[?25h\x1b[?1049l');
   process.on('SIGINT', () => { restore(); process.stdout.write(color('Stopped.\n', 'dim')); process.exit(0); });
