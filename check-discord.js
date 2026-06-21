@@ -39,14 +39,14 @@ async function send(message) {
       signal: AbortSignal.timeout(15000),
     });
     if (resp.ok) {
-      console.log(`✅ Posted "${message}" — Discord returned HTTP ${resp.status}.`);
+      console.log(`Posted "${message}" — Discord returned HTTP ${resp.status}.`);
       return true;
     }
     const body = (await resp.text()).slice(0, 300);
-    console.log(`❌ HTTP ${resp.status} from Discord: ${body}\n` +
+    console.log(`HTTP ${resp.status} from Discord: ${body}\n` +
       `   (Check the webhook URL is correct and not deleted.)`);
   } catch (e) {
-    console.log(`❌ Could not reach Discord: ${e.message}`);
+    console.log(`Could not reach Discord: ${e.message}`);
   }
   return false;
 }

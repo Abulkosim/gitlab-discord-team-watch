@@ -206,7 +206,7 @@ async function buildRows(events, newIds) {
     const col = ACTION_COLOR[action] || 'white';
     const isNew = newIds.has(e.id);
 
-    const mark = isNew ? color('●', 'bold', 'green') : ' '.repeat(wMark);
+    const mark = isNew ? color('*', 'bold', 'green') : ' '.repeat(wMark);
     const who = color(fit(author, wWho), 'bold');
     const act = color(fit(describe(e), wAction), col);
     const proj = color(fit(await projectName(e), wProj), 'dim');
@@ -230,19 +230,12 @@ async function render(events, newIds, status, memberCount) {
   process.stdout.write(out);
 }
 
-const EMOJI = {
-  'pushed to': '⬆️', 'pushed new': '🌱', deleted: '🗑️',
-  opened: '✨', closed: '🚪', merged: '🟣', accepted: '🟣',
-  'commented on': '💬', joined: '👋', left: '👋', created: '✨',
-};
-
 async function discordLine(event) {
   const author = (event.author && event.author.name) || event._user.name;
-  const icon = EMOJI[event.action_name] || '•';
   const proj = await projectName(event);
   const when = relTime(event.created_at || '');
   const projPart = proj ? ` · \`${proj}\`` : '';
-  return `${icon} **${author}** ${describe(event)}${projPart} · _${when} ago_`;
+  return `**${author}** ${describe(event)}${projPart} · _${when} ago_`;
 }
 
 async function postToDiscord(content) {

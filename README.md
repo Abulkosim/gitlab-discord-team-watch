@@ -29,11 +29,11 @@ Token: `<GITLAB_URL>/-/user_settings/personal_access_tokens` → scope `read_api
 
 ## Discord notifications
 
-1. Discord → **Channel → ⚙️ Edit → Integrations → Webhooks → New Webhook → Copy URL**
+1. Discord → **Channel → Edit → Integrations → Webhooks → New Webhook → Copy URL**
   (tip: make a private server just for yourself).
 2. Put it in `.env`: `DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/XXXX/YYYY`
 3. Run as usual — each new event posts to the channel, e.g.
-  `⬆️ Aziz pushed 3 commits to main — fix auth · api · 2m ago`
+  `Aziz pushed 3 commits to main — fix auth · api · 2m ago`
 
 The first poll is silent (loads the backlog, no startup spam); later polls batch their
 new events into one message; delivery is best-effort and never blocks the feed.
