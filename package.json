@@ -1,0 +1,19 @@
+{
+  "name": "gitlab-team-watch",
+  "version": "1.0.0",
+  "description": "Live terminal feed of every team member's GitLab activity, with optional Discord notifications.",
+  "type": "commonjs",
+  "bin": {
+    "gitlab-watch": "gitlab-watch.js",
+    "check-discord": "check-discord.js"
+  },
+  "scripts": {
+    "watch": "node gitlab-watch.js",
+    "check-discord": "node check-discord.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {}
+}
