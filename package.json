@@ -1,7 +1,7 @@
 {
   "name": "gitlab-team-watch",
   "version": "1.0.0",
-  "description": "Live terminal feed of every team member's GitLab activity, with optional Discord notifications.",
+  "description": "Headless daemon that watches your team's GitLab activity and posts new events to Discord.",
   "type": "commonjs",
   "bin": {
     "gitlab-watch": "gitlab-watch.js",

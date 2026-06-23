@@ -35,7 +35,6 @@ const TOKEN = process.env.GITLAB_TOKEN || '';
 const GROUP = (process.env.GITLAB_GROUP || '').trim();
 const USERS = (process.env.GITLAB_USERS || '').split(',').map((u) => u.trim()).filter(Boolean);
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL || '30', 10);
-const EVENT_LIMIT = parseInt(process.env.EVENT_LIMIT || '40', 10);
 const DISCORD_WEBHOOK_URL = (process.env.DISCORD_WEBHOOK_URL || '').trim();
 
 function fail(msg) {
@@ -47,6 +46,9 @@ if (!BASE) fail('GITLAB_URL is not set. See the README / .env.example.');
 if (!TOKEN) fail('GITLAB_TOKEN is not set. Create a personal access token with `read_api` scope.');
 if (!GROUP && USERS.length === 0) {
   fail('Set GITLAB_GROUP and/or GITLAB_USERS so the tool knows whom to watch.');
+}
+if (!DISCORD_WEBHOOK_URL) {
+  fail('DISCORD_WEBHOOK_URL is not set. This tool posts team activity to Discord — set the webhook URL. See README.');
 }
 
 class HttpError extends Error {
@@ -124,26 +126,10 @@ async function fetchUserEvents(user, perPage = 30) {
   return events;
 }
 
-const ACTION_COLOR = {
-  'pushed to': 'cyan', 'pushed new': 'cyan', deleted: 'red',
-  opened: 'green', closed: 'yellow', merged: 'magenta', accepted: 'magenta',
-  'commented on': 'blue', joined: 'dim', left: 'dim', created: 'green',
-};
-
 const TARGET_LABEL = {
   MergeRequest: 'MR', Issue: 'issue', Note: 'comment', DiffNote: 'comment',
   Milestone: 'milestone', 'WikiPage::Meta': 'wiki',
 };
-
-function relTime(iso) {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return '?';
-  const s = Math.floor((Date.now() - t) / 1000);
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h`;
-  return `${Math.floor(s / 86400)}d`;
-}
 
 function describe(event) {
   const action = event.action_name || 'did';
@@ -186,48 +172,6 @@ async function projectName(event) {
     }
   }
   return projectCache.get(pid);
-}
-
-function fit(s, width, align = 'left') {
-  s = String(s ?? '');
-  if (s.length > width) s = width > 1 ? s.slice(0, width - 1) + '…' : s.slice(0, width);
-  return align === 'right' ? s.padStart(width) : s.padEnd(width);
-}
-
-async function buildRows(events, newIds) {
-  const cols = process.stdout.columns || 100;
-  const wMark = 2, wWho = 16, wWhen = 6, wProj = Math.min(24, Math.max(10, Math.floor(cols * 0.2)));
-  const wAction = Math.max(20, cols - wMark - wWho - wProj - wWhen - 4);
-
-  const lines = [];
-  for (const e of events.slice(0, EVENT_LIMIT)) {
-    const author = (e.author && e.author.name) || e._user.name;
-    const action = e.action_name || '';
-    const col = ACTION_COLOR[action] || 'white';
-    const isNew = newIds.has(e.id);
-
-    const mark = isNew ? color('*', 'bold', 'green') : ' '.repeat(wMark);
-    const who = color(fit(author, wWho), 'bold');
-    const act = color(fit(describe(e), wAction), col);
-    const proj = color(fit(await projectName(e), wProj), 'dim');
-    const when = color(fit(relTime(e.created_at || ''), wWhen, 'right'), 'dim');
-    lines.push(`${fit(mark, wMark)} ${who} ${act} ${proj} ${when}`);
-  }
-  return lines;
-}
-
-const CLEAR = '\x1b[2J\x1b[H';
-
-async function render(events, newIds, status, memberCount) {
-  const rows = await buildRows(events, newIds);
-  const title = color(' GitLab Team Activity ', 'bold', 'cyan');
-  const sub = color(`${memberCount} members · ${BASE}`, 'dim');
-  let out = CLEAR;
-  out += title + '\n';
-  out += color(status, 'dim') + '\n\n';
-  out += rows.join('\n') + '\n\n';
-  out += sub + '\n';
-  process.stdout.write(out);
 }
 
 function clockTime(iso) {
@@ -282,61 +226,92 @@ async function notifyDiscord(newEvents) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const FETCH_CONCURRENCY = Math.max(1, parseInt(process.env.FETCH_CONCURRENCY || '8', 10));
+
+async function mapPool(items, limit, worker) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function run() {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, run));
+  return results;
+}
+
+function stamp() {
+  return new Date().toLocaleTimeString('en-GB', { hour12: false });
+}
+function log(msg) {
+  process.stdout.write(color(`[${stamp()}] `, 'dim') + msg + '\n');
+}
+function warn(msg) {
+  process.stderr.write(color(`[${stamp()}] `, 'dim') + color('warn ', 'yellow') + msg + '\n');
+}
+
 async function main() {
   const watching = [
     GROUP ? `group ${GROUP}` : '',
     GROUP && USERS.length ? ' + ' : '',
     USERS.length ? `users ${USERS.join(',')}` : '',
   ].join('');
-  process.stdout.write(color(`Resolving team members from ${watching} …\n`, 'dim'));
+  log(color(`Resolving team members from ${watching} …`, 'dim'));
 
   const members = await resolveMembers();
-  process.stdout.write(color(`Watching ${members.length} member(s).`, 'green') +
-    ` Polling every ${POLL_INTERVAL}s. Ctrl-C to quit.\n`);
-  if (DISCORD_WEBHOOK_URL) {
-    process.stdout.write(color('Discord notifications enabled', 'cyan') +
-      ' (first poll primes the feed; pings start with the next new event).\n');
+  log(color(`Watching ${members.length} member(s) on ${BASE}.`, 'green') +
+    ` Polling every ${POLL_INTERVAL}s, posting to Discord. Ctrl-C to quit.`);
+
+  // Remember which events we've already handled so we don't re-notify. Bounded
+  // so a long-running daemon doesn't grow this set forever; old ids fall out of
+  // GitLab's recent-events window long before they're evicted, so they can't
+  // resurface as "new".
+  const seen = new Set();
+  const seenOrder = [];
+  const SEEN_CAP = Math.max(2000, members.length * 200);
+  function markSeen(id) {
+    if (seen.has(id)) return;
+    seen.add(id);
+    seenOrder.push(id);
+    if (seenOrder.length > SEEN_CAP) seen.delete(seenOrder.shift());
   }
 
-  const seen = new Set();
-  let feed = [];
   let firstPoll = true;
 
   async function poll() {
-    let collected = [];
-    for (const m of members) collected = collected.concat(await fetchUserEvents(m));
+    const perUser = await mapPool(members, FETCH_CONCURRENCY, (m) => fetchUserEvents(m));
     const byId = new Map();
-    for (const e of [...collected, ...feed]) {
+    for (const e of perUser.flat()) {
       if (e.id != null) byId.set(e.id, e);
     }
-    const merged = [...byId.values()].sort((a, b) =>
+    const fresh = [...byId.values()].filter((e) => !seen.has(e.id));
+    for (const e of fresh) markSeen(e.id);
+    fresh.sort((a, b) =>
       String(b.created_at || '').localeCompare(String(a.created_at || '')));
-    const newIds = new Set(merged.filter((e) => !seen.has(e.id)).map((e) => e.id));
-    for (const id of newIds) seen.add(id);
-    feed = merged.slice(0, Math.max(EVENT_LIMIT * 3, 120));
-    return newIds;
+    return fresh;
   }
 
-  process.stdout.write('\x1b[?1049h\x1b[?25l');
-  const restore = () => process.stdout.write('\x1b[?25h\x1b[?1049l');
-  process.on('SIGINT', () => { restore(); process.stdout.write(color('Stopped.\n', 'dim')); process.exit(0); });
+  process.on('SIGINT', () => { log(color('Stopped.', 'dim')); process.exit(0); });
 
   for (;;) {
-    const stamp = new Date().toLocaleTimeString();
-    await render(feed, new Set(), `Refreshing… (last attempt ${stamp})`, members.length);
-    let newIds, status;
     try {
-      newIds = await poll();
-      if (!firstPoll) await notifyDiscord(feed.filter((e) => newIds.has(e.id)));
+      const fresh = await poll();
+      if (firstPoll) {
+        log(color(`Primed feed with ${fresh.length} recent event(s) — no notifications sent.`, 'cyan'));
+      } else if (fresh.length) {
+        await notifyDiscord(fresh);
+        log(`${fresh.length} new event(s) posted to Discord.`);
+      } else {
+        log(color('No new events.', 'dim'));
+      }
       firstPoll = false;
-      status = `Updated ${new Date().toLocaleTimeString()} · ${newIds.size} new since last poll · next in ${POLL_INTERVAL}s`;
     } catch (err) {
-      newIds = new Set();
-      status = `${err.message} · retrying in ${POLL_INTERVAL}s`;
+      warn(`${err.message} — retrying in ${POLL_INTERVAL}s`);
     }
-    await render(feed, newIds, status, members.length);
     await sleep(POLL_INTERVAL * 1000);
   }
 }
 
-main().catch((e) => { process.stdout.write('\x1b[?25h\x1b[?1049l'); fail(e.message); });
+main().catch((e) => fail(e.message));
