@@ -230,12 +230,18 @@ async function render(events, newIds, status, memberCount) {
   process.stdout.write(out);
 }
 
+function clockTime(iso) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return '--:--:--';
+  return new Date(t).toLocaleTimeString('en-GB', { hour12: false });
+}
+
 async function discordLine(event) {
   const author = (event.author && event.author.name) || event._user.name;
   const proj = await projectName(event);
-  const when = relTime(event.created_at || '');
+  const time = clockTime(event.created_at || '');
   const projPart = proj ? ` · \`${proj}\`` : '';
-  return `**${author}** ${describe(event)}${projPart} · _${when} ago_`;
+  return `\`${time}\`  **${author}**  ${describe(event)}${projPart}`;
 }
 
 async function postToDiscord(content) {
@@ -253,19 +259,25 @@ async function postToDiscord(content) {
 
 async function notifyDiscord(newEvents) {
   if (!DISCORD_WEBHOOK_URL || newEvents.length === 0) return;
-  const lines = [];
-  for (const e of [...newEvents].reverse()) lines.push(await discordLine(e));
 
-  let chunk = [], size = 0;
+  const ordered = [...newEvents].reverse();
+  const lines = [];
+  for (const e of ordered) lines.push(await discordLine(e));
+
+  const n = ordered.length;
+  const title = `**${n} new event${n === 1 ? '' : 's'}**`;
+
+  let first = true;
+  let chunk = [], size = title.length + 1;
   for (const line of lines) {
     if (size + line.length + 1 > 1900 && chunk.length) {
-      await postToDiscord(chunk.join('\n'));
-      chunk = []; size = 0;
+      await postToDiscord((first ? title + '\n' : '') + chunk.join('\n'));
+      first = false; chunk = []; size = 0;
     }
     chunk.push(line);
     size += line.length + 1;
   }
-  if (chunk.length) await postToDiscord(chunk.join('\n'));
+  if (chunk.length) await postToDiscord((first ? title + '\n' : '') + chunk.join('\n'));
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
