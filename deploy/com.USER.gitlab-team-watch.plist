@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.USER.gitlab-team-watch</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- 1) Full path to node on the OFFICE machine. Find it with: command -v node -->
+        <string>/REPLACE/WITH/PATH/TO/node</string>
+        <!-- 2) Full path to gitlab-watch.js on the OFFICE machine. -->
+        <string>/REPLACE/WITH/PATH/TO/gitlab-team-watch/gitlab-watch.js</string>
+    </array>
+
+    <!-- 3) Full path to the project folder (so it finds .env). -->
+    <key>WorkingDirectory</key>
+    <string>/REPLACE/WITH/PATH/TO/gitlab-team-watch</string>
+
+    <!-- Start at login and whenever the agent is loaded. -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Keep it running; restart if it dies. Network outages are handled inside
+         the app (it retries), so it stays up while you're off the VPN. -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Don't hammer-restart on a fatal misconfig; wait 30s between relaunches. -->
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <!-- 4) Where logs go. ~ won't expand here, so use the full /Users/<you>/... path. -->
+    <key>StandardOutPath</key>
+    <string>/REPLACE/WITH/HOME/Library/Logs/gitlab-team-watch.log</string>
+    <key>StandardErrorPath</key>
+    <string>/REPLACE/WITH/HOME/Library/Logs/gitlab-team-watch.log</string>
+</dict>
+</plist>
